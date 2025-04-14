@@ -2,13 +2,14 @@
   <img src="aruba-central-go.webp" />
 </p>
 
- <a href="https://goreportcard.com/report/github.com/tphakala/aruba-central-go">
+<p align="center">
+  <a href="https://goreportcard.com/report/github.com/tphakala/aruba-central-go">
     <img src="https://goreportcard.com/badge/github.com/tphakala/aruba-central-go?style=flat-square">
- </a>
-<a href="https://coderabbit.ai">
+  </a>
+  <a href="https://coderabbit.ai">
     <img src="https://img.shields.io/coderabbit/prs/github/tphakala/aruba-central-go?utm_source=oss&utm_medium=github&utm_campaign=tphakala%2Faruba-central-go&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews">
-</a>
-
+  </a>
+</p>
 
 # Aruba Central Go Client
 
