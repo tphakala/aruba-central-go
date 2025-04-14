@@ -1,193 +1,113 @@
-# Aruba Central API Client for Go
+# Aruba Central Package (`pkg/central`)
 
-A Go package for interacting with the Aruba Central API. This package provides a complete client implementation with authentication, token management, and API operations for managing and monitoring Aruba devices.
+This package provides the core functionality for interacting with the Aruba Central API, implementing authentication flow, token management, and API operations.
 
-## Overview
+## Package Structure
 
-This package offers a reusable client for Aruba Central's REST API with the following features:
+- `client.go`: Core client implementation with configuration and request handling
+- `auth.go`: Authentication workflows and token management
+- `ap.go`: Access Point related API operations
+- `types.go`: Data structures for API responses and configurations
+- `errors.go`: Custom error types and error handling utilities
+- `cache.go`: Caching implementation for API responses
 
-- Complete OAuth2 authentication flow implementation
-- Automatic token refresh
-- Rate limit detection and handling
-- Configurable timeouts
-- Structured API response types
-- Detailed debug logging
+## API Reference
 
-## Usage
-
-### Creating a Client
+### Client Initialization
 
 ```go
-import "github.com/tphakala/aruba-central-monitoring/internal/arubacentral"
+// Create a new client
+client, err := central.NewClient(configPath string, debug bool)
 
-// Create a new client with debug logging enabled
-client, err := arubacentral.NewClient("config.json", true)
-if err != nil {
-    // Handle error
-}
+// Ensure valid authentication token
+err := client.EnsureValidToken(tenantID string)
 ```
 
-### Authentication
-
-The client handles all aspects of authentication:
+### Access Point Operations
 
 ```go
-// Ensure we have a valid token for the specified tenant
-err := client.EnsureValidToken("tenant-id")
-if err != nil {
-    // Handle authentication error
-}
-```
-
-### Getting AP Status
-
-```go
-import "context"
-
-// Create a context with timeout
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-
 // Get status for a specific AP
-status, err := client.GetAPStatus(ctx, "AP-SERIAL", "TENANT-ID")
-if err != nil {
-    // Handle error
-}
+status, err := client.GetAPStatus(ctx context.Context, serial string, tenantID string)
 
-// Print AP status
-fmt.Printf("AP %s status: %s\n", status.Name, status.Status)
+// Get all APs
+aps, err := client.GetAllAPs(ctx context.Context, tenantID string)
+
+// Get specific AP and retrieve all APs at once
+status, allAPs, err := client.GetAPStatusAndAll(ctx context.Context, serial string, tenantID string)
 ```
 
-### Getting All APs
+### Error Handling Utilities
 
 ```go
-// Get status for a specific AP and retrieve all APs at once
-status, allAPs, err := client.GetAPStatusAndAll(ctx, "AP-SERIAL", "TENANT-ID")
-if err != nil {
-    // Handle error
-}
+// Check error types
+if central.IsRateLimited(err) { ... }
+if central.IsTimeout(err) { ... }
+if central.IsNotFound(err) { ... }
 
-// Process all APs
-fmt.Printf("Retrieved %d access points\n", len(allAPs))
-for _, ap := range allAPs {
-    // Work with each AP
-    fmt.Printf("AP %s: %s (Status: %s)\n", ap.Serial, ap.Name, ap.Status)
-}
+// Get retry information
+retryAfter := central.GetRetryAfter(err)
 ```
 
-## Configuration
+## Implementation Details
 
-The client requires a JSON configuration file with the following structure:
+### Authentication Flow
 
-```json
-{
-  "api": {
-    "endpoint": "https://apigw-prod2.central.arubanetworks.com",
-    "client_id": "your_client_id",
-    "client_secret": "your_client_secret",
-    "username": "your_username",
-    "password": "your_password",
-    "timeouts": {
-      "default": 60,
-      "auth": 30,
-      "status": 60
-    },
-    "refresh_buffer": 900
-  },
-  "token_cache": {},
-  "cache": {
-    "enabled": true,
-    "ttl": 300,
-    "path": "ap_cache.bolt"
-  }
-}
-```
+The authentication process follows Aruba Central's OAuth2 flow:
 
-## Authentication Flow
+1. **Login**: Obtain session cookie and CSRF token
+2. **Authorization Code**: Exchange credentials for auth code
+3. **Token Exchange**: Convert auth code to access/refresh tokens
+4. **Token Refresh**: Maintain valid authentication
 
-The client implements Aruba Central's complete authentication flow:
+### Rate Limit Handling
 
-1. **Login**: 
-   - POST username/password to obtain session cookie and CSRF token
-   - Endpoint: `/oauth2/authorize/central/api/login`
+The client implements a sophisticated rate limit detection system:
+- Parses X-RateLimit-* headers
+- Extracts retry-after values
+- Provides structured error types with retry information
 
-2. **Authorization Code**:
-   - POST with session cookie and CSRF token to get authorization code
-   - Endpoint: `/oauth2/authorize/central/api`
+### Error Types
 
-3. **Token Exchange**:
-   - Exchange authorization code for access/refresh tokens
-   - Endpoint: `/oauth2/token`
+The package uses custom error types for different API responses:
+- `RateLimitError`: For API rate limiting
+- `NotFoundError`: When resources aren't found
+- `TimeoutError`: For request timeouts
+- `APIError`: General API errors with status codes
 
-4. **Token Refresh**:
-   - Refresh tokens when they're about to expire
-   - Falls back to full authentication if refresh fails
+### Thread Safety
 
-## Rate Limiting
+The client uses mutex locks to ensure thread safety when refreshing tokens, allowing concurrent API requests with the same client.
 
-The client detects and handles API rate limits:
+## For LLM Usage
 
-- Parses rate limit headers (X-RateLimit-*)
-- Extracts retry information from responses
-- Provides detailed error messages with retry advice
+When generating code using this package:
 
-## Error Handling
+1. Always initialize with `NewClient()` and check the returned error
+2. Ensure a valid token with `EnsureValidToken()` before making API calls
+3. Use context with appropriate timeouts for all API operations
+4. Implement proper error handling using the provided error checking functions
+5. Consider rate limits when designing loops or concurrent operations
 
-The client uses structured error handling with custom error types:
+## Advanced Configuration Options
+
+The client supports advanced configuration through the Config struct:
 
 ```go
-if err != nil {
-    // Check if this is a rate limiting error
-    if arubacentral.IsRateLimited(err) {
-        retryAfter := arubacentral.GetRetryAfter(err)
-        fmt.Printf("Rate limited. Retry after %d seconds\n", retryAfter)
-        time.Sleep(time.Duration(retryAfter) * time.Second)
-        // Retry request...
+type Config struct {
+    API struct {
+        Endpoint      string
+        ClientID      string
+        ClientSecret  string
+        Username      string
+        Password      string
+        Timeouts      map[string]int
+        RefreshBuffer int
     }
-
-    // Check for timeout errors
-    if arubacentral.IsTimeout(err) {
-        fmt.Println("Request timed out, try with a longer timeout")
+    TokenCache map[string]TokenInfo
+    Cache      struct {
+        Enabled bool
+        TTL     int
+        Path    string
     }
-
-    // Check for not found errors
-    if arubacentral.IsNotFound(err) {
-        fmt.Println("Resource not found")
-    }
-
-    // General error handling
-    fmt.Printf("Error: %v\n", err)
 }
-```
-
-The package provides these error checking functions:
-
-- `IsRateLimited(err)`: Check if the error is due to rate limiting
-- `IsTimeout(err)`: Check if the error is due to a timeout
-- `IsNotFound(err)`: Check if the error is due to a resource not being found
-- `GetRetryAfter(err)`: Extract the retry-after value from a rate limit error
-
-These functions work with the standard Go error interfaces, so they're compatible with regular error handling patterns.
-
-## Debug Logging
-
-When debugging is enabled, the client provides detailed logs:
-
-- HTTP request/response details (with sensitive data redacted)
-- Authentication events
-- Token management
-- Rate limit information
-- Timing metrics
-
-## Types
-
-The package provides Go types for Aruba Central API responses:
-
-- `Config`: Client configuration
-- `APStatus`: Access point status
-- `Radio`: Radio status
-- `APIResponse`: Full API response
-
-## Thread Safety
-
-The client uses mutex locks to ensure thread safety when refreshing tokens. 
+``` 
